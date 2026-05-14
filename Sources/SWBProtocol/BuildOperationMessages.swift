@@ -815,36 +815,92 @@ public struct BuildOperationProgressUpdated: Message, Equatable {
     /// The number of build actions to complete.
     public let numPossibleMaxExecutedCommands: Int?
 
+    /// The number of commands scanned.
+    public let numCommandsScanned: Int?
+
+    /// The lower bound of the number of commands.
+    public let numCommandsLowerBound: Int?
+
+    /// The number of commands completed.
+    public let numCommandsCompleted: Int?
+
     /// A condensed status message.
     public let condensedStatusMessage: String?
 
+    @available(*, deprecated, renamed: "init(targetName:statusMessage:showInLog:numCommandsStarted:numPossibleMaxExecutedCommands:numCommandsLowerBound:numCommandsLowerBound:numCommandsCompleted:numCommandsScanned:condensedStatusMessage:)")
     public init(
         targetName: String? = nil,
         statusMessage: String,
         percentComplete: Double,
+        showInLog: Bool
+    ) {
+        self.init(
+            targetName: targetName,
+            statusMessage: statusMessage,
+            showInLog: showInLog
+        )
+    }
+
+    public init(
+        targetName: String? = nil,
+        statusMessage: String,
         showInLog: Bool,
         numCommandsStarted: Int? = nil,
         numPossibleMaxExecutedCommands: Int? = nil,
+        numCommandsLowerBound: Int? = nil,
+        numCommandsCompleted: Int? = nil,
+        numCommandsScanned: Int? = nil,
         condensedStatusMessage: String? = nil
     ) {
         self.targetName = targetName
         self.statusMessage = statusMessage
-        self.percentComplete = percentComplete
         self.showInLog = showInLog
         self.numCommandsStarted = numCommandsStarted
         self.numPossibleMaxExecutedCommands = numPossibleMaxExecutedCommands
+        self.numCommandsLowerBound = numCommandsLowerBound
+        self.numCommandsCompleted = numCommandsCompleted
+        self.numCommandsScanned = numCommandsScanned
         self.condensedStatusMessage = condensedStatusMessage
+
+        if let numCommandsScanned,
+           let numPossibleMaxExecutedCommands,
+           let numCommandsStarted,
+           let numCommandsCompleted,
+           let numCommandsLowerBound {
+            let maxTotalTasks = max(numCommandsScanned, numCommandsLowerBound)
+
+            // Compute the amount of scanning completed.
+            let scanningProgress = Double(numCommandsCompleted) / Double(max(1, maxTotalTasks))
+
+            // Compute the amount of actual work completed.
+            let executionProgress = Double(numCommandsStarted) / Double(max(1, numPossibleMaxExecutedCommands))
+
+            // We currently show the percent completed as a combination of the scanning progress and execution progress.
+            //
+            // The scanning progress is as if we were considering the whole build from scratch -- i.e. the number of commands retired over the total number of commands. This ensures that this number will always progress orderly throughout the build, but it has the downside that it isn't the "percent complete" of the actual build.
+            //
+            // The execution progress is more likely to be where the real time is spent (if work needs to be done), but it doesn't give much granularity for large builds which are largely up-to-date.
+            //
+            // We currently use a complete ad hoc blend of these two numbers with 20% weighted for scanning.
+            self.percentComplete = 20.0 * scanningProgress + 80.0 * executionProgress
+        } else {
+            self.percentComplete = -1
+        }
     }
 
+
     public init(from deserializer: any Deserializer) throws {
-        let count = try deserializer.beginAggregate(4...7)
+        let count = try deserializer.beginAggregate(4...10)
         self.targetName = try deserializer.deserialize()
         self.statusMessage = try deserializer.deserialize()
         self.percentComplete = try deserializer.deserialize()
         self.showInLog = try deserializer.deserialize()
         self.numCommandsStarted = count >= 5 ? try deserializer.deserialize() : nil
         self.numPossibleMaxExecutedCommands = count >= 6 ? try deserializer.deserialize() : nil
-        self.condensedStatusMessage = count >= 7 ? try deserializer.deserialize() : nil
+        self.numCommandsScanned = count >= 7 ? try deserializer.deserialize() : nil
+        self.numCommandsLowerBound = count >= 8 ? try deserializer.deserialize() : nil
+        self.numCommandsCompleted = count >= 9 ? try deserializer.deserialize() : nil
+        self.condensedStatusMessage = count >= 10 ? try deserializer.deserialize() : nil
     }
 
     public func serialize<T: Serializer>(to serializer: T) {

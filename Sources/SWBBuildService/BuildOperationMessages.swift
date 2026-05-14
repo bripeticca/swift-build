@@ -81,7 +81,7 @@ final class ActiveBuild: ActiveBuildOperation {
 
         func updateProgress(statusMessage: String, showInLog: Bool) {
             if activeBuild.shouldSendStatusUpdate(showInLog: showInLog) {
-                activeBuild.request.send(BuildOperationProgressUpdated(statusMessage: statusMessage, percentComplete: -1, showInLog: showInLog, condensedStatusMessage: statusMessage))
+                activeBuild.request.send(BuildOperationProgressUpdated(statusMessage: statusMessage, showInLog: showInLog))
             }
         }
 
@@ -1203,23 +1203,6 @@ final class OperationDelegate: BuildOperationDelegate {
         // Check if we should send progress status.
         guard activeBuild.shouldSendStatusUpdate(showInLog: false) else { return }
 
-        let maxTotalTasks = max(stats.numCommandsScanned, stats.numCommandsLowerBound)
-
-        // Compute the amount of scanning completed.
-        let scanningProgress = Double(stats.numCommandsCompleted) / Double(max(1, maxTotalTasks))
-
-        // Compute the amount of actual work completed.
-        let executionProgress = Double(stats.numCommandsStarted) / Double(max(1, stats.numPossibleMaxExecutedCommands))
-
-        // We currently show the percent completed as a combination of the scanning progress and execution progress.
-        //
-        // The scanning progress is as if we were considering the whole build from scratch -- i.e. the number of commands retired over the total number of commands. This ensures that this number will always progress orderly throughout the build, but it has the downside that it isn't the "percent complete" of the actual build.
-        //
-        // The execution progress is more likely to be where the real time is spent (if work needs to be done), but it doesn't give much granularity for large builds which are largely up-to-date.
-        //
-        // We currently use a complete ad hoc blend of these two numbers with 20% weighted for scanning.
-        let percentComplete = 20.0 * scanningProgress + 80.0 * executionProgress
-
         // On the other hand, we report that status message itself in terms of the number of commands executed versus the maximum number of commands which might be required to be executed.
 
         let messageShortening = workspaceContext.userPreferences.activityTextShorteningLevel
@@ -1228,7 +1211,7 @@ final class OperationDelegate: BuildOperationDelegate {
         if stats.numCommandsStarted == 0 {
             if  messageShortening != .full || workspaceContext.userPreferences.enableDebugActivityLogs {
                 let status = "Scanning build tasks"
-                request.send(BuildOperationProgressUpdated(targetName: targetName, statusMessage: status, percentComplete: percentComplete, showInLog: false, numCommandsStarted: stats.numCommandsStarted, numPossibleMaxExecutedCommands: stats.numPossibleMaxExecutedCommands, condensedStatusMessage: status))
+                request.send(BuildOperationProgressUpdated(targetName: targetName, statusMessage: status, showInLog: false, numCommandsStarted: stats.numCommandsStarted, numPossibleMaxExecutedCommands: stats.numPossibleMaxExecutedCommands, condensedStatusMessage: status))
             }
         } else {
             let statusMessage = messageShortening > .legacy
@@ -1237,7 +1220,6 @@ final class OperationDelegate: BuildOperationDelegate {
             request.send(BuildOperationProgressUpdated(
                 targetName: targetName,
                 statusMessage: statusMessage,
-                percentComplete: percentComplete,
                 showInLog: false,
                 numCommandsStarted: stats.numCommandsStarted,
                 numPossibleMaxExecutedCommands: stats.numPossibleMaxExecutedCommands,
@@ -1452,7 +1434,7 @@ final class OperationDelegate: BuildOperationDelegate {
     func updateBuildProgress(statusMessage: String, showInLog: Bool) {
         guard !skipCommandLevelInformation else { return }
 
-        request.send(BuildOperationProgressUpdated(statusMessage: statusMessage, percentComplete: -1, showInLog: showInLog, condensedStatusMessage: statusMessage))
+        request.send(BuildOperationProgressUpdated(statusMessage: statusMessage, showInLog: showInLog, condensedStatusMessage: statusMessage))
     }
 
     func recordBuildBacktraceFrame(identifier: BuildOperationBacktraceFrameEmitted.Identifier, previousFrameIdentifier: BuildOperationBacktraceFrameEmitted.Identifier?, category: BuildOperationBacktraceFrameEmitted.Category, kind: BuildOperationBacktraceFrameEmitted.Kind, description: String) {
