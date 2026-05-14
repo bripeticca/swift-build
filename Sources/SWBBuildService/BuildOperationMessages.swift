@@ -1211,7 +1211,7 @@ final class OperationDelegate: BuildOperationDelegate {
         if stats.numCommandsStarted == 0 {
             if  messageShortening != .full || workspaceContext.userPreferences.enableDebugActivityLogs {
                 let status = "Scanning build tasks"
-                request.send(BuildOperationProgressUpdated(targetName: targetName, statusMessage: status, showInLog: false, numCommandsStarted: stats.numCommandsStarted, numPossibleMaxExecutedCommands: stats.numPossibleMaxExecutedCommands, condensedStatusMessage: status))
+                request.send(BuildOperationProgressUpdated(targetName: targetName, statusMessage: status, showInLog: false, numCommandsStarted: stats.numCommandsStarted, numPossibleMaxExecutedCommands: stats.numPossibleMaxExecutedCommands, numCommandsLowerBound: stats.numCommandsLowerBound, numCommandsCompleted: stats.numCommandsCompleted, numCommandsScanned: stats.numCommandsScanned, condensedStatusMessage: status))
             }
         } else {
             let statusMessage = messageShortening > .legacy
@@ -1223,6 +1223,9 @@ final class OperationDelegate: BuildOperationDelegate {
                 showInLog: false,
                 numCommandsStarted: stats.numCommandsStarted,
                 numPossibleMaxExecutedCommands: stats.numPossibleMaxExecutedCommands,
+                numCommandsLowerBound: stats.numCommandsLowerBound,
+                numCommandsCompleted: stats.numCommandsCompleted,
+                numCommandsScanned: stats.numCommandsScanned,
                 condensedStatusMessage: "Building tasks"
             ))
         }

@@ -809,20 +809,57 @@ public struct BuildOperationProgressUpdated: Message, Equatable {
     /// Whether or not to create a corresponding entry in the build log.
     public let showInLog: Bool
 
-    /// The number of commands that have been started.
-    public let numCommandsStarted: Int?
+    public struct BuildOperationCommandsProgress: Serializable, Sendable, Equatable {
+        /// The number of commands that have been started.
+        public let numCommandsStarted: Int
 
-    /// The number of build actions to complete.
-    public let numPossibleMaxExecutedCommands: Int?
+        /// The number of build actions to complete.
+        public let numPossibleMaxExecutedCommands: Int
 
-    /// The number of commands scanned.
-    public let numCommandsScanned: Int?
+        /// The number of commands scanned.
+        public let numCommandsScanned: Int
 
-    /// The lower bound of the number of commands.
-    public let numCommandsLowerBound: Int?
+        /// The lower bound of the number of commands.
+        public let numCommandsLowerBound: Int
 
-    /// The number of commands completed.
-    public let numCommandsCompleted: Int?
+        /// The number of commands completed.
+        public let numCommandsCompleted: Int
+
+        public init(
+            numCommandsStarted: Int,
+            numPossibleMaxExecutedCommands: Int,
+            numCommandsScanned: Int,
+            numCommandsLowerBound: Int,
+            numCommandsCompleted: Int
+        ) {
+            self.numCommandsScanned = numCommandsScanned
+            self.numCommandsStarted = numCommandsStarted
+            self.numPossibleMaxExecutedCommands = numPossibleMaxExecutedCommands
+            self.numCommandsCompleted = numCommandsCompleted
+            self.numCommandsLowerBound = numCommandsLowerBound
+        }
+
+        public func serialize<T>(to serializer: T) where T : SWBUtil.Serializer {
+            serializer.serializeAggregate(5) {
+                serializer.serialize(self.numCommandsStarted)
+                serializer.serialize(self.numPossibleMaxExecutedCommands)
+                serializer.serialize(self.numCommandsScanned)
+                serializer.serialize(self.numCommandsLowerBound)
+                serializer.serialize(self.numCommandsCompleted)
+            }
+        }
+
+        public init(from deserializer: any SWBUtil.Deserializer) throws {
+            try deserializer.beginAggregate(5)
+            self.numCommandsStarted = try deserializer.deserialize()
+            self.numPossibleMaxExecutedCommands = try deserializer.deserialize()
+            self.numCommandsScanned = try deserializer.deserialize()
+            self.numCommandsLowerBound = try deserializer.deserialize()
+            self.numCommandsCompleted = try deserializer.deserialize()
+        }
+    }
+
+    public let commandsProgress: BuildOperationCommandsProgress?
 
     /// A condensed status message.
     public let condensedStatusMessage: String?
@@ -834,73 +871,91 @@ public struct BuildOperationProgressUpdated: Message, Equatable {
         percentComplete: Double,
         showInLog: Bool
     ) {
-        self.init(
-            targetName: targetName,
-            statusMessage: statusMessage,
-            showInLog: showInLog
-        )
+        if percentComplete < 0 {
+            self.init(
+                targetName: targetName,
+                statusMessage: statusMessage,
+                showInLog: showInLog
+            )
+        } else {
+            self.init(
+                targetName: targetName,
+                statusMessage: statusMessage,
+                showInLog: showInLog,
+                numCommandsStarted: 0,
+                numPossibleMaxExecutedCommands: 0,
+                numCommandsLowerBound: 0,
+                numCommandsCompleted: 0,
+                numCommandsScanned: 0,
+                condensedStatusMessage: ""
+            )
+        }
     }
 
     public init(
         targetName: String? = nil,
         statusMessage: String,
         showInLog: Bool,
-        numCommandsStarted: Int? = nil,
-        numPossibleMaxExecutedCommands: Int? = nil,
-        numCommandsLowerBound: Int? = nil,
-        numCommandsCompleted: Int? = nil,
-        numCommandsScanned: Int? = nil,
         condensedStatusMessage: String? = nil
     ) {
         self.targetName = targetName
         self.statusMessage = statusMessage
         self.showInLog = showInLog
-        self.numCommandsStarted = numCommandsStarted
-        self.numPossibleMaxExecutedCommands = numPossibleMaxExecutedCommands
-        self.numCommandsLowerBound = numCommandsLowerBound
-        self.numCommandsCompleted = numCommandsCompleted
-        self.numCommandsScanned = numCommandsScanned
         self.condensedStatusMessage = condensedStatusMessage
+        self.commandsProgress = nil
+        self.percentComplete = -1
+    }
 
-        if let numCommandsScanned,
-           let numPossibleMaxExecutedCommands,
-           let numCommandsStarted,
-           let numCommandsCompleted,
-           let numCommandsLowerBound {
-            let maxTotalTasks = max(numCommandsScanned, numCommandsLowerBound)
+    public init(
+        targetName: String? = nil,
+        statusMessage: String,
+        showInLog: Bool,
+        numCommandsStarted: Int,
+        numPossibleMaxExecutedCommands: Int,
+        numCommandsLowerBound: Int,
+        numCommandsCompleted: Int,
+        numCommandsScanned: Int,
+        condensedStatusMessage: String
+    ) {
+        self.targetName = targetName
+        self.statusMessage = statusMessage
+        self.showInLog = showInLog
+        self.condensedStatusMessage = condensedStatusMessage
+        self.commandsProgress = .init(
+            numCommandsStarted: numCommandsStarted,
+            numPossibleMaxExecutedCommands: numPossibleMaxExecutedCommands,
+            numCommandsScanned: numCommandsScanned,
+            numCommandsLowerBound: numCommandsLowerBound,
+            numCommandsCompleted: numCommandsCompleted
+        )
 
-            // Compute the amount of scanning completed.
-            let scanningProgress = Double(numCommandsCompleted) / Double(max(1, maxTotalTasks))
+        let maxTotalTasks = max(numCommandsScanned, numCommandsLowerBound)
 
-            // Compute the amount of actual work completed.
-            let executionProgress = Double(numCommandsStarted) / Double(max(1, numPossibleMaxExecutedCommands))
+        // Compute the amount of scanning completed.
+        let scanningProgress = Double(numCommandsCompleted) / Double(max(1, maxTotalTasks))
 
-            // We currently show the percent completed as a combination of the scanning progress and execution progress.
-            //
-            // The scanning progress is as if we were considering the whole build from scratch -- i.e. the number of commands retired over the total number of commands. This ensures that this number will always progress orderly throughout the build, but it has the downside that it isn't the "percent complete" of the actual build.
-            //
-            // The execution progress is more likely to be where the real time is spent (if work needs to be done), but it doesn't give much granularity for large builds which are largely up-to-date.
-            //
-            // We currently use a complete ad hoc blend of these two numbers with 20% weighted for scanning.
-            self.percentComplete = 20.0 * scanningProgress + 80.0 * executionProgress
-        } else {
-            self.percentComplete = -1
-        }
+        // Compute the amount of actual work completed.
+        let executionProgress = Double(numCommandsStarted) / Double(max(1, numPossibleMaxExecutedCommands))
+
+        // We currently show the percent completed as a combination of the scanning progress and execution progress.
+        //
+        // The scanning progress is as if we were considering the whole build from scratch -- i.e. the number of commands retired over the total number of commands. This ensures that this number will always progress orderly throughout the build, but it has the downside that it isn't the "percent complete" of the actual build.
+        //
+        // The execution progress is more likely to be where the real time is spent (if work needs to be done), but it doesn't give much granularity for large builds which are largely up-to-date.
+        //
+        // We currently use a complete ad hoc blend of these two numbers with 20% weighted for scanning.
+        self.percentComplete = 20.0 * scanningProgress + 80.0 * executionProgress
     }
 
 
     public init(from deserializer: any Deserializer) throws {
-        let count = try deserializer.beginAggregate(4...10)
+        let count = try deserializer.beginAggregate(4...6)
         self.targetName = try deserializer.deserialize()
         self.statusMessage = try deserializer.deserialize()
         self.percentComplete = try deserializer.deserialize()
         self.showInLog = try deserializer.deserialize()
-        self.numCommandsStarted = count >= 5 ? try deserializer.deserialize() : nil
-        self.numPossibleMaxExecutedCommands = count >= 6 ? try deserializer.deserialize() : nil
-        self.numCommandsScanned = count >= 7 ? try deserializer.deserialize() : nil
-        self.numCommandsLowerBound = count >= 8 ? try deserializer.deserialize() : nil
-        self.numCommandsCompleted = count >= 9 ? try deserializer.deserialize() : nil
-        self.condensedStatusMessage = count >= 10 ? try deserializer.deserialize() : nil
+        self.commandsProgress = count >= 5 ? try deserializer.deserialize() : nil
+        self.condensedStatusMessage = count >= 6 ? try deserializer.deserialize() : nil
     }
 
     public func serialize<T: Serializer>(to serializer: T) {

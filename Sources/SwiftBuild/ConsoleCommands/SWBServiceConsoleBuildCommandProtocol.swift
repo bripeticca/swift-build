@@ -397,9 +397,47 @@ public enum SwiftBuildMessage {
         public let percentComplete: Double
         public let showInLog: Bool
         public let targetName: String?
-        public let numCommands: Int?
-        public let numCommandsExpected: Int?
+        public let commandsProgressInfo: CommandsProgressInfo?
         public let condensedStatusMessage: String?
+
+        public struct CommandsProgressInfo: Sendable, Codable, Equatable {
+            /// The number of commands that have been started.
+            public let numCommandsStarted: Int
+
+            /// The number of build actions to complete.
+            public let numPossibleMaxExecutedCommands: Int
+
+            /// The number of commands scanned.
+            public let numCommandsScanned: Int
+
+            /// The lower bound of the number of commands.
+            public let numCommandsLowerBound: Int
+
+            /// The number of commands completed.
+            public let numCommandsCompleted: Int
+        }
+
+        @available(*, deprecated, renamed: "init(message:percentComplete:showInLog:targetName:numCommandsStarted:numPossibleMaxExecutedCommands:numCommandsScanned:numCommandsLowerBound:numCommandsCompleted:condensedStatusMessage:)")
+        @_spi(Testing)
+        public init(
+            message: String,
+            percentComplete: Double,
+            showInLog: Bool,
+            targetName: String? = nil,
+        ) {
+            self.init(
+                message: message,
+                percentComplete: percentComplete,
+                showInLog: showInLog,
+                targetName: targetName,
+                numCommandsStarted: nil,
+                numPossibleMaxExecutedCommands: nil,
+                numCommandsScanned: nil,
+                numCommandsLowerBound: nil,
+                numCommandsCompleted: nil,
+                condensedStatusMessage: nil,
+            )
+        }
 
         @_spi(Testing)
         public init(
@@ -407,18 +445,36 @@ public enum SwiftBuildMessage {
             percentComplete: Double,
             showInLog: Bool,
             targetName: String? = nil,
-            numCommands: Int? = nil,
-            numCommandsExpected: Int? = nil,
+            numCommandsStarted: Int? = nil,
+            numPossibleMaxExecutedCommands: Int? = nil,
+            numCommandsScanned: Int? = nil,
+            numCommandsLowerBound: Int? = nil,
+            numCommandsCompleted: Int? = nil,
             condensedStatusMessage: String? = nil
         ) {
             self.message = message
             self.percentComplete = percentComplete
             self.showInLog = showInLog
             self.targetName = targetName
-            self.numCommands = numCommands
-            self.numCommandsExpected = numCommandsExpected
+
+            if let numCommandsScanned,
+               let numCommandsStarted,
+               let numCommandsCompleted,
+               let numCommandsLowerBound,
+               let numPossibleMaxExecutedCommands {
+                self.commandsProgressInfo = .init(
+                    numCommandsStarted: numCommandsStarted,
+                    numPossibleMaxExecutedCommands: numPossibleMaxExecutedCommands,
+                    numCommandsScanned: numCommandsScanned,
+                    numCommandsLowerBound: numCommandsLowerBound,
+                    numCommandsCompleted: numCommandsCompleted
+                )
+            } else {
+                self.commandsProgressInfo = nil
+            }
             self.condensedStatusMessage = condensedStatusMessage
         }
+
     }
 
     /// Event indicating that a target was already up to date and did not need to be built.
@@ -946,8 +1002,7 @@ extension SwiftBuildMessage.DidUpdateProgressInfo: Codable, Equatable, Sendable 
         case percentComplete
         case showInLog
         case targetName
-        case numCommands
-        case numCommandsExpected
+        case commandsProgressInfo
         case condensedStatusMessage
     }
 
@@ -957,8 +1012,7 @@ extension SwiftBuildMessage.DidUpdateProgressInfo: Codable, Equatable, Sendable 
         percentComplete = try container.decodeDoubleOrString(forKey: .percentComplete)
         showInLog = try container.decodeBoolOrString(forKey: .showInLog)
         targetName = try container.decodeIfPresent(String.self, forKey: .targetName)
-        numCommands = try container.decodeIfPresent(Int.self, forKey: .numCommands)
-        numCommandsExpected = try container.decodeIfPresent(Int.self, forKey: .numCommandsExpected)
+        commandsProgressInfo = try container.decodeIfPresent(CommandsProgressInfo.self, forKey: .commandsProgressInfo)
         condensedStatusMessage = try container.decodeIfPresent(String.self, forKey: .condensedStatusMessage)
     }
 }
